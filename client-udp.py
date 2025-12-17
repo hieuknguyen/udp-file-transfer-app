@@ -14,6 +14,14 @@ def file_to_bytes(path, chunk_size=1024, offset=0):
             if not chunk:
                 break
             yield chunk
+
+# def file_to_bytes1(path):
+#     with open(path, "rb") as f:
+#         chunk = f.read()
+#         return chunk
+            
+# data = file_to_bytes1("duck.png")
+
 class Client:
     def __init__(self, server_ip="127.0.0.1", server_port=9000):
         self.server_addr = (server_ip, server_port)
@@ -33,14 +41,17 @@ class Client:
         self.client.close()
 client = Client()
 
-file_path = "duck.png"
+file_path = "a.zip"
 chunk_size = 1024
 file_id = str(uuid.uuid4())
 file_size = os.path.getsize(file_path)
 total_chunks = (file_size % chunk_size) + file_size - (file_size % chunk_size)
 
+#tạo đối tựong băm SHA256(chunk1 + chunk2 + chunk3)
+file_hasher = hashlib.sha256()
 
 for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
+    file_hasher.update(byte_chunk)
     dict = {"type": "DATA",
             "file_id": file_id,
             "file_name": file_path,
@@ -51,7 +62,7 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
             "checksum": base64.b64encode(
             hashlib.sha256(byte_chunk).digest()
         ).decode("ascii")}
-    print(f"Gửi chunk {i+1}/{dict}")
+    # print(f"Gửi chunk {i+1}/{dict}")
     client.send_message(dict)
     data, addr = client.receive_response()
     if data:
@@ -60,10 +71,13 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
         print("Timeout – chưa nhận ACK")
     
 dict = {"type": "END",
-        "file_id": str(uuid.uuid4()),
-        "file_checksum": "def456",
+        "file_id": file_id,
+        "file_checksum": base64.b64encode(file_hasher.digest()).decode("ascii"),
         "status": "finished"}
-
+# print(file_hasher.digest())
+# print(base64.b64encode(file_hasher.digest()).decode("ascii"))
+# print(base64.b64encode(hashlib.sha256(data).digest()).decode("ascii"))
+client.send_message(dict)
 
 # client.close()
 
