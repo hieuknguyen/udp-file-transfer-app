@@ -42,11 +42,14 @@ class Client:
         
     def receive_response(self):
         try:
-            # Nhận phản hồi từ Server
+            # Nhận phản hồi từ Server (ACK hoặc ERROR)
             data, addr = self.client.recvfrom(4096)
             return data, addr
         except socket.timeout:
-             # Nếu quá thời gian chờ mà không có phản hồi coi như timeout
+            # Nếu timeout xảy ra:
+            # - Có thể gói DATA bị mất
+            # - Hoặc ACK từ Server bị mất
+            # Trong cả hai trường hợp, Client cần retransmit ở phiên bản nâng cao.
             return None, None
             
     def close(self):
@@ -57,6 +60,7 @@ class Client:
 client = Client()
 # Đường dẫn file cần gửi
 file_path = "a.zip"
+# chunk_size xác định kích thước mỗi packet dữ liệu.
 # Chia nhỏ giúp tránh packet quá lớn và dễ retransmit
 chunk_size = 1024
 # Tạo file_id duy nhất cho phiên truyền
@@ -67,24 +71,40 @@ file_size = os.path.getsize(file_path)
 # Tổng số chunk của file
 # (Mục đích: theo dõi tiến độ và hỗ trợ ráp file phía Server)
 total_chunks = (file_size % chunk_size) + file_size - (file_size % chunk_size)
-
 #tạo đối tựong băm SHA256(chunk1 + chunk2 + chunk3)
 file_hasher = hashlib.sha256()
+
+    # Mỗi vòng lặp tương ứng với một DATA packet.
+    # i đóng vai trò là chunk_index – vị trí của mảnh dữ liệu trong file gốc.
 for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
      # Cập nhật hash tổng file 
     file_hasher.update(byte_chunk)
+    
     # Đóng gói DATA packet dưới dạng JSON
-    dict =  {"type": "DATA", 
+    dict =  
+            {"type": "DATA", 
+            # file_id giúp Server biết chunk này thuộc về file nào
             "file_id": file_id,
+            # Tên file (để Server đặt tên file output)
             "file_name": file_path,
+            # chunk_index là chìa khóa để Server ráp file đúng vị trí.
+            # Điều này đặc biệt quan trọng vì UDP không đảm bảo thứ tự gói tin.
             "chunk_index": i,
+            # Tổng số chunk của file
+            # Giúp Server theo dõi tiến độ và kiểm tra thiếu chunk
             "total_chunks": total_chunks,
+            # Kích thước thực tế của chunk (chunk cuối có thể nhỏ hơn)
             "chunk_size": len(byte_chunk),
+            # data chứa nội dung chunk đã được mã hóa base64.
+            # Việc encode là bắt buộc vì JSON không hỗ trợ dữ liệu nhị phân.
             "data": base64.b64encode(byte_chunk).decode("ascii"),
+            # checksum là mã băm SHA-256 của chunk.
+            # Server sẽ tính lại checksum để phát hiện lỗi dữ liệu.
             "checksum": base64.b64encode(
             hashlib.sha256(byte_chunk).digest()
         ).decode("ascii")}
     # print(f"Gửi chunk {i+1}/{dict}")
+    
     # Gửi DATA packet tới Server
     client.send_message(dict)
     # Chờ phản hồi từ Server (ACK / ERROR)
@@ -96,16 +116,24 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
         # Nếu timeout (chưa nhận ACK)
         print("Timeout – chưa nhận ACK")
     
-dict = {"type": "END",
+dict = 
+        # Gói END báo hiệu đã gửi xong toàn bộ chunk
+        {"type": "END",
+        # Gắn với file_id của phiên truyền
         "file_id": file_id,
+        # Checksum tổng của toàn bộ file
+        # Server dùng để kiểm tra file sau khi ráp xon
         "file_checksum": base64.b64encode(file_hasher.digest()).decode("ascii"),
+        # Trạng thái kết thúc
         "status": "finished"}
 # print(file_hasher.digest())
 # print(base64.b64encode(file_hasher.digest()).decode("ascii"))
 # print(base64.b64encode(hashlib.sha256(data).digest()).decode("ascii"))
+# Gửi gói END tới Server
 client.send_message(dict)
 
 # client.close()
+
 
 
 
