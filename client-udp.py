@@ -81,8 +81,7 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
     file_hasher.update(byte_chunk)
     
     # Đóng gói DATA packet dưới dạng JSON
-    dict =  
-            {"type": "DATA", 
+    dict =  {"type": "DATA", 
             # file_id giúp Server biết chunk này thuộc về file nào
             "file_id": file_id,
             # Tên file (để Server đặt tên file output)
@@ -116,9 +115,9 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
         # Nếu timeout (chưa nhận ACK)
         print("Timeout – chưa nhận ACK")
     
-dict = 
+dict = {
         # Gói END báo hiệu đã gửi xong toàn bộ chunk
-        {"type": "END",
+        "type": "END",
         # Gắn với file_id của phiên truyền
         "file_id": file_id,
         # Checksum tổng của toàn bộ file
