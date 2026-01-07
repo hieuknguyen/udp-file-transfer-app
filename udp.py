@@ -14,6 +14,7 @@ server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Bind vào 0.0.0.0 để lắng nghe trên tất cả các card mạng (network interfaces) của máy này.
 # Port 9000 là cổng đích mà client phải gửi dữ liệu tới.
 server.bind(("0.0.0.0", 9000))
+server.settimeout(1)  # Giúp vòng lặp thoát nhanh khi không có dữ liệu (hữu ích để Ctrl+C)
 
 print("UDP Server đang lắng nghe tại cổng 9000...")
 
@@ -40,10 +41,16 @@ def sha256_b64_file(path, block_size=1024 * 1024):
 
 # --- [BACKEND 3 START] VÒNG LẶP CHÍNH & XỬ LÝ IO ---
 
-while True:
-    try:
-        # Nhận gói tin thô. 65535 là kích thước tối đa lý thuyết của 1 gói UDP packet.
-        data, addr = server.recvfrom(65535)
+try:
+    while True:
+        try:
+            # Nhận gói tin thô. 65535 là kích thước tối đa lý thuyết của 1 gói UDP packet.
+            data, addr = server.recvfrom(65535)
+        except socket.timeout:
+            continue
+        except ConnectionResetError:
+            print("Client đã đóng kết nối hoặc port không còn tồn tại")
+            continue
         
         # ... (Đoạn giải mã JSON thuộc về Backend 2) ...
         data = data.decode()          
@@ -109,7 +116,7 @@ while True:
                 expected_file_checksum = packet.get("file_checksum")
                 if expected_file_checksum is not None:
                     actual_file_checksum = sha256_b64_file(state["path"])
-                    print(f"Checksum mong đợi: {state["path"]}")
+                    print(f"Checksum mong đợi: {state['path']}")
                     status = "OK" if actual_file_checksum == expected_file_checksum else "BAD_CHECKSUM"
                 else:
                     status = "FINISHED"
@@ -119,7 +126,14 @@ while True:
                 print(f"Đã lưu file: {state['path']} ({status})")
 
         # print(data)
-    except ConnectionResetError:
-        print("Client đã đóng kết nối hoặc port không còn tồn tại")
-    continue 
+except KeyboardInterrupt:
+    print("Đã nhận Ctrl+C, dừng server...")
+finally:
+    for state in file_states.values():
+        try:
+            state["fh"].close()
+        except Exception:
+            pass
+    server.close()
+    print("Server đã đóng socket.")
 # --- [BACKEND 3 END] ---

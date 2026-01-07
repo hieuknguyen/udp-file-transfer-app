@@ -56,6 +56,29 @@ class Client:
         # Đóng socket UDP
         self.client.close()
 
+def send_corrupted_packet(client, file_path, chunk_size=1024):
+    # Gửi thử một gói DATA với checksum sai để server phản hồi ERROR
+    with open(file_path, "rb") as f:
+        byte_chunk = f.read(chunk_size)
+
+    bad_data = bytearray(byte_chunk)
+    if bad_data:
+        bad_data[0] ^= 0xFF  # đảo 1 byte để tạo lỗi
+
+    packet = {
+        "type": "DATA",
+        "file_id": str(uuid.uuid4()),
+        "file_name": file_path,
+        "chunk_index": 0,
+        "total_chunks": 1,
+        "chunk_size": len(bad_data),
+        "data": base64.b64encode(bad_data).decode("ascii"),
+        # Checksum cố ý sai
+        "checksum": "INVALID_CHECKSUM",
+    }
+    client.send_message(packet)
+    print("Đã gửi gói DATA lỗi giả lập (checksum sai)")
+
 # Tạo đối tượng Client
 client = Client()
 # Đường dẫn file cần gửi
@@ -65,6 +88,8 @@ file_path = input("Nhập tên file: ")
 chunk_size = 1024
 # Số lần retry khi nhận ERROR hoặc timeout
 MAX_RETRIES = 3
+# Giả lập gói lỗi ở chunk thứ 2 (index 1) trong lần gửi đầu tiên
+CORRUPT_CHUNK_INDEX = 1
 # Tạo file_id duy nhất cho phiên truyền
 # Giúp Server phân biệt nhiều file / nhiều client
 file_id = str(uuid.uuid4())
@@ -104,15 +129,26 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
             "checksum": base64.b64encode(
             hashlib.sha256(byte_chunk).digest()
         ).decode("ascii")}
-    print(byte_chunk)
-    print(base64.b64encode(byte_chunk))
-    print(base64.b64encode(byte_chunk).decode("ascii"))    
+    # print(byte_chunk)
+    # print(base64.b64encode(byte_chunk))
+    # print(base64.b64encode(byte_chunk).decode("ascii"))    
 
     # print(f"Gửi chunk {i+1}/{dict}")
     
     # Gửi DATA packet tới Server và xử lý retry khi có lỗi
     for attempt in range(1, MAX_RETRIES + 1):
-        client.send_message(packet)
+        # Lần gửi đầu tiên của chunk thứ 2: gửi gói lỗi để server trả ERROR
+        outgoing = packet
+        if i == CORRUPT_CHUNK_INDEX and attempt == 1:
+            corrupted_data = bytearray(byte_chunk)
+            if corrupted_data:
+                corrupted_data[0] ^= 0xFF
+            outgoing = dict(packet)
+            outgoing["data"] = base64.b64encode(corrupted_data).decode("ascii")
+            outgoing["checksum"] = "INVALID_CHECKSUM"
+            print("Gửi gói DATA lỗi giả lập cho chunk thứ 2")
+
+        client.send_message(outgoing)
         data, addr = client.receive_response()
 
         if not data:
