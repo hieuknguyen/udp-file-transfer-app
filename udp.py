@@ -6,6 +6,7 @@ import os
 
 # --- KHỞI TẠO SERVER & CẤU HÌNH MÔI TRƯỜNG ---
 
+
 # Khởi tạo socket với giao thức UDP.
 # Lý do chọn UDP: Tối ưu tốc độ truyền tải cho file lớn.
 # Tuy nhiên, ta phải tự xử lý việc mất gói tin ở tầng ứng dụng.
@@ -14,6 +15,17 @@ server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Bind vào 0.0.0.0 để lắng nghe trên tất cả các card mạng của máy này.
 # Port 9000 là cổng đích mà client phải gửi dữ liệu tới.
 server.bind(("0.0.0.0", 9000))
+
+print("UDP Server đang lắng nghe tại cổng 9000...")
+# Khởi tạo socket với giao thức UDP (SOCK_DGRAM).
+# Lý do chọn UDP: Tối ưu tốc độ truyền tải cho file lớn, giảm độ trễ bắt tay (handshake) của TCP.
+# Tuy nhiên, ta phải tự xử lý việc mất gói tin ở tầng ứng dụng.
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# Bind vào 0.0.0.0 để lắng nghe trên tất cả các card mạng (network interfaces) của máy này.
+# Port 9000 là cổng đích mà client phải gửi dữ liệu tới.
+server.bind(("0.0.0.0", 9000))
+server.settimeout(1)  # Giúp vòng lặp thoát nhanh khi không có dữ liệu (hữu ích để Ctrl+C)
 
 print("UDP Server đang lắng nghe tại cổng 9000...")
 
@@ -131,3 +143,4 @@ while True:
     except ConnectionResetError:
         print("Client đã đóng kết nối hoặc port không còn tồn tại")
     continue 
+
