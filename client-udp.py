@@ -59,10 +59,12 @@ class Client:
 # Tạo đối tượng Client
 client = Client()
 # Đường dẫn file cần gửi
-file_path = "a.zip"
+file_path = input("Nhập tên file: ")
 # chunk_size xác định kích thước mỗi packet dữ liệu.
 # Chia nhỏ giúp tránh packet quá lớn và dễ retransmit
 chunk_size = 1024
+# Số lần retry khi nhận ERROR hoặc timeout
+MAX_RETRIES = 3
 # Tạo file_id duy nhất cho phiên truyền
 # Giúp Server phân biệt nhiều file / nhiều client
 file_id = str(uuid.uuid4())
@@ -81,7 +83,7 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
     file_hasher.update(byte_chunk)
     
     # Đóng gói DATA packet dưới dạng JSON
-    dict =  {"type": "DATA", 
+    packet =  {"type": "DATA", 
             # file_id giúp Server biết chunk này thuộc về file nào
             "file_id": file_id,
             # Tên file (để Server đặt tên file output)
@@ -104,19 +106,37 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
         ).decode("ascii")}
     # print(f"Gửi chunk {i+1}/{dict}")
     
-    # Gửi DATA packet tới Server
-    client.send_message(dict)
-    # Chờ phản hồi từ Server (ACK / ERROR)
-    data, addr = client.receive_response()
-    if data:
-        # Nếu nhận được phản hồi
-        print("Server trả:", data.decode())
+    # Gửi DATA packet tới Server và xử lý retry khi có lỗi
+    for attempt in range(1, MAX_RETRIES + 1):
+        client.send_message(packet)
+        data, addr = client.receive_response()
+
+        if not data:
+            print(f"Timeout – chưa nhận ACK (lần {attempt}/{MAX_RETRIES})")
+            continue
+
+        try:
+            response = json.loads(data.decode())
+        except json.JSONDecodeError:
+            print(f"Phản hồi không phải JSON, gửi lại chunk {i} (lần {attempt}/{MAX_RETRIES})")
+            continue
+
+        # Nhận ACK -> thoát vòng lặp retry
+        if response.get("type") == "ACK":
+            print("Server trả:", response)
+            break
+
+        # Nhận ERROR -> gửi lại chunk
+        if response.get("type") == "ERROR":
+            print(f"Server báo lỗi cho chunk {i}, gửi lại (lần {attempt}/{MAX_RETRIES})")
+            continue
+
+        # Phản hồi không xác định -> thử gửi lại
+        print(f"Phản hồi không xác định {response}, gửi lại chunk {i} (lần {attempt}/{MAX_RETRIES})")
     else:
-        # Nếu timeout (chưa nhận ACK)
-        print("Timeout – chưa nhận ACK")
+        print(f"Chunk {i} gửi thất bại sau {MAX_RETRIES} lần thử")
     
-dict = {
-        # Gói END báo hiệu đã gửi xong toàn bộ chunk
+dict = {# Gói END báo hiệu đã gửi xong toàn bộ chunk
         "type": "END",
         # Gắn với file_id của phiên truyền
         "file_id": file_id,
