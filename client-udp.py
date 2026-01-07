@@ -104,6 +104,10 @@ for i, byte_chunk in enumerate(file_to_bytes(file_path, chunk_size)):
             "checksum": base64.b64encode(
             hashlib.sha256(byte_chunk).digest()
         ).decode("ascii")}
+    print(byte_chunk)
+    print(base64.b64encode(byte_chunk))
+    print(base64.b64encode(byte_chunk).decode("ascii"))    
+
     # print(f"Gửi chunk {i+1}/{dict}")
     
     # Gửi DATA packet tới Server và xử lý retry khi có lỗi

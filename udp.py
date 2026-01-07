@@ -48,13 +48,14 @@ while True:
         # ... (Đoạn giải mã JSON thuộc về Backend 2) ...
         data = data.decode()          
         packet = json.loads(data)   
-        
+        print("data:", data)   
+        print("packet: " , packet)
         if packet["type"] == "DATA":
             file_id = packet["file_id"]
             chunk_index = int(packet["chunk_index"])
             # ... (Decode base64 thuộc về Backend 1) ...
             chunk_bytes = base64.b64decode(packet["data"].encode("ascii"))
-
+            print("chunk_bytes:", chunk_bytes)
             # ... (Kiểm tra Checksum thuộc về Backend 4) ...
             if base64.b64encode(hashlib.sha256(chunk_bytes).digest()) == packet["checksum"].encode("ascii"):
                 
@@ -108,6 +109,7 @@ while True:
                 expected_file_checksum = packet.get("file_checksum")
                 if expected_file_checksum is not None:
                     actual_file_checksum = sha256_b64_file(state["path"])
+                    print(f"Checksum mong đợi: {state["path"]}")
                     status = "OK" if actual_file_checksum == expected_file_checksum else "BAD_CHECKSUM"
                 else:
                     status = "FINISHED"
