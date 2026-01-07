@@ -1,10 +1,10 @@
-import socket
-import json
-import base64
-import hashlib
-import os
+import socket #Tạo kết nối mạng (Giúp Server và Client gửi/nhận gói tin qua giao thức UDP).
+import json #Xử lý dữ liệu JSON (Giúp đóng gói và giải mã dữ liệu gửi qua mạng).
+import base64 #Mã hóa và giải mã base64 (Giúp chuyển đổi dữ liệu nhị phân thành chuỗi ASCII để gửi qua JSON).
+import hashlib #Tạo mã băm SHA-256 (Giúp kiểm tra tính toàn vẹn của dữ liệu khi truyền qua mạng).
+import os #Xử lý tệp và thư mục (Giúp lưu trữ file nhận được từ Client).
 
-# --- [BACKEND 3 START] KHỞI TẠO SERVER & CẤU HÌNH MÔI TRƯỜNG ---
+# --- [B3S] KHỞI TẠO SERVER & CẤU HÌNH MÔI TRƯỜNG ---
 
 # Khởi tạo socket với giao thức UDP (SOCK_DGRAM).
 # Lý do chọn UDP: Tối ưu tốc độ truyền tải cho file lớn, giảm độ trễ bắt tay (handshake) của TCP.
@@ -29,15 +29,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True) # Đảm bảo thư mục tồn tại, tr
 # Giúp server xử lý đồng thời (concurrently) nhiều file từ nhiều client khác nhau.
 file_states = {}  # file_id -> {"path": str, "fh": file_object}
 
-# --- [BACKEND 3 END] ---
-
-def sha256_b64_file(path, block_size=1024 * 1024):
-    # (Phần của Backend 1 & 4 - Em có thể bỏ qua hoặc để nguyên)
-    hasher = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(block_size), b""):
-            hasher.update(block)
-    return base64.b64encode(hasher.digest()).decode("ascii")
+# mục đích là tính mã băm SHA256 của toàn bộ file khi nhận xong và trả về chuỗi Base64 
+def sha256_b64_file(path, block_size=1024 * 1024): 
+    hasher = hashlib.sha256() # Tạo đối tượng băm SHA256
+    with open(path, "rb") as f: # Mở file ở chế độ đọc nhị phân
+        for block in iter(lambda: f.read(block_size), b""): # Đọc file theo từng khối mặc định 1MB->tránh đọc hết vào RAM
+            hasher.update(block) # Với mỗi khối cập nhật giá trị băm
+    return base64.b64encode(hasher.digest()).decode("ascii") #giải mã băm thành chuỗi ascii sau đó mã hóa thành base64 dạng chuỗi thành file gốc
 
 # --- [B3S] VÒNG LẶP CHÍNH & XỬ LÝ IO ---
 # IO chính là nhận gói tin UDP từ client, giải mã, ghi file, và gửi ACK và gửi lỗi NACK.
@@ -48,12 +46,11 @@ try:
             # Nhận gói tin thô. 65535 là kích thước tối đa lý thuyết của 1 gói UDP packet.
             data, addr = server.recvfrom(65535)
         except socket.timeout:
-            continue
+            continue # Nếu không có dữ liệu, quay lại đầu vòng lặp để chờ tiếp tục nhận tránh thực thi lệnh bên dưới
         except ConnectionResetError:
             print("Client đã đóng kết nối hoặc port không còn tồn tại")
-            continue
+            continue # Bỏ qua lỗi kết nối bị đặt lại và tiếp tục lắng nghe
         
-        # ... (Đoạn giải mã JSON thuộc về Backend 2) ...
         data = data.decode()          
         packet = json.loads(data)   
         print("data:", data)   
@@ -61,10 +58,11 @@ try:
         if packet["type"] == "DATA":
             file_id = packet["file_id"]
             chunk_index = int(packet["chunk_index"])
-            # ... (Decode base64 thuộc về Backend 1) ...
             chunk_bytes = base64.b64decode(packet["data"].encode("ascii"))
             print("chunk_bytes:", chunk_bytes)
-            # ... (Kiểm tra Checksum thuộc về Backend 4) ...
+            # Vỏ ngoài cùng (JSON String): IyB1... (Dữ liệu đóng hộp để gửi qua mạng).
+            # Lớp vỏ đệm (ASCII Bytes): b'IyB1...' (Chuyển dạng để máy giải mã hiểu).
+            # Cốt lõi (Decoded File): b'# udp...' (Nội dung file thực sự để ghi vào ổ cứng).
             if base64.b64encode(hashlib.sha256(chunk_bytes).digest()) == packet["checksum"].encode("ascii"):
                 
                 # [STATE MANAGEMENT] Kiểm tra xem file này đã được mở chưa?
@@ -90,9 +88,9 @@ try:
                 
                 # Ghi dữ liệu nhị phân xuống đĩa cứng tại vị trí vừa seek.
                 state["fh"].write(chunk_bytes)
-
-                # ... (Gửi ACK - Backend 2 & 4) ...
+                # gửi ACK nếu nhận đúng
                 dict = {"type": "ACK", "file_id": file_id, "chunk_index": chunk_index, "status": "RECEIVED"}
+                # tiến hành gửi gói tin ACK về cho client đóng gói dưới dạng JSON và mã hóa dạng byte
                 server.sendto(json.dumps(dict).encode(), addr)
             else:
                 # ... (Xử lý lỗi checksum) ...
@@ -104,8 +102,8 @@ try:
             # [RESOURCE CLEANUP] Xử lý khi Client báo đã gửi xong
             file_id = packet["file_id"]
             
-            # Lấy trạng thái ra và XÓA luôn khỏi dictionary (pop) để giải phóng RAM.
-            # Tránh memory leak nếu server chạy lâu dài.
+            # Lấy t rạng thái ra và XÓA luôn khỏi dictionary (pop) để giải phóng RAM.
+            # Tránhmemory leak nếu server chạy lâu dài.
             state = file_states.pop(file_id, None)
             
             if state is not None:
@@ -113,9 +111,11 @@ try:
                 # Nếu không close, file có thể bị lỗi hoặc thiếu dữ liệu cuối cùng.
                 state["fh"].close()
                 
-                # ... (Đoạn kiểm tra toàn vẹn file sau khi lưu thuộc về Backend 4) ...
+                # ... (Đoạn kiểm tra toàn vẹn file sau cùng) ...
+                # lấy chuỗi hash tổng file từ gói END
                 expected_file_checksum = packet.get("file_checksum")
                 if expected_file_checksum is not None:
+                    #tính toán lại mã băm của file đã lưu và so sánh cho giống file gốc client và lưu vào biến
                     actual_file_checksum = sha256_b64_file(state["path"])
                     print(f"Checksum mong đợi: {state['path']}")
                     status = "OK" if actual_file_checksum == expected_file_checksum else "BAD_CHECKSUM"
@@ -128,13 +128,12 @@ try:
 
         # print(data)
 except KeyboardInterrupt:
-    print("Đã nhận Ctrl+C, dừng server...")
+    print("Đã nhận Ctrl+C, dừng server...") #in thông báo khi dừng server bằng Ctrl+C
 finally:
-    for state in file_states.values():
+    for state in file_states.values(): #chạy vòng lặp để đóng tất cả file handle còn mở
         try:
             state["fh"].close()
         except Exception:
-            pass
+            pass #bỏ qua lỗi nếu có
     server.close()
     print("Server đã đóng socket.")
-# --- [BACKEND 3 END] ---
